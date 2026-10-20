@@ -24,7 +24,7 @@ self.onmessage = ({data}) => {
       }
       self.postMessage({type, id, spectrum}, [spectrum.buffer]);
     } else if (type === 'inverse') {
-      if (!channels) throw new Error('Carica prima un’immagine');
+      if (!channels) throw new Error('IMAGE_REQUIRED');
       const output = new Uint8ClampedArray(n*n*4);
       for (let c = 0; c < 3; c++) {
         const re = channels[c].re.slice(), im = channels[c].im.slice();

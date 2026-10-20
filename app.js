@@ -1,3 +1,4 @@
+import {t,setText,initI18n,onLanguageChange} from './i18n.mjs';
 import './teaching.js';
 const $ = id => document.getElementById(id);
 const source = $('source'), result = $('result'), spectrum = $('spectrum');
@@ -9,9 +10,9 @@ let originalImage = null, originalName = '', preset = 'none', forwardId = 0, inv
 let pendingInverse = false, showAfterForward = false, busy = false, ready = false, inverseTimer, toastTimer;
 let lastLoad = 0, revision = 0, resultRevision = -1, exportPending = false;
 const worker = new Worker(new URL('./worker.js', import.meta.url), {type:'module'});
-function toast(message) { $('toast').textContent = message; $('toast').classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 4000); }
+function toast(message) { setText('toast',()=>typeof message==='function'?message():t(message)); $('toast').classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 4000); }
 function status(title, detail, loading=false) {
-  $('status').textContent = title; $('status-detail').textContent = detail;
+  setText('status',()=>t(title)); setText('status-detail',()=>typeof detail==='function'?detail():t(detail));
   $('status-dot').classList.toggle('busy', loading); busy = loading;
 }
 function setView(next) {
@@ -19,7 +20,7 @@ function setView(next) {
   source.hidden = next !== 'original'; result.hidden = next !== 'result';
   $('tab-original').classList.toggle('selected',next === 'original'); $('tab-original').setAttribute('aria-pressed',next === 'original');
   $('tab-result').classList.toggle('selected',next === 'result'); $('tab-result').setAttribute('aria-pressed',next === 'result');
-  $('image-tag').textContent = next === 'original' ? 'ORIGINALE' : 'RICOSTRUZIONE iFFT';
+  setText($('image-tag'),()=>(next === 'original' ? 'ORIGINALE' : 'RICOSTRUZIONE iFFT'));
 }
 function snapshot() {
   history.push({mask:maskCtx.getImageData(0,0,n,n), source:srcCtx.getImageData(0,0,n,n), preset});
@@ -62,10 +63,10 @@ function maskChanged(show=true) {
   if ($('auto').checked) {clearTimeout(inverseTimer); inverseTimer=setTimeout(()=>inverse(show),90);}
 }
 worker.onmessage = ({data}) => {
-  if (data.type === 'error') {if(data.id!==forwardId && data.id!==inverseId)return; status('Elaborazione non riuscita',data.message);toast(data.message);exportPending=false;return;}
+  if (data.type === 'error') {if(data.id!==forwardId && data.id!==inverseId)return; status('Elaborazione non riuscita','Errore di elaborazione.');toast(data.message==='IMAGE_REQUIRED'?'Carica prima un’immagine':'Errore di elaborazione.');exportPending=false;return;}
   if (data.type === 'forward' && data.id === forwardId) {
     ready = true; baseSpectrum = data.spectrum; refreshSpectrum();
-    status('Spettro pronto','Scegli un filtro o disegna direttamente sullo spettro.');
+    status('Spettro pronto','Maschera delle frequenze modificabile.');
     if(pendingInverse) {const show=showAfterForward;pendingInverse=false;showAfterForward=false;inverse(show);}
   }
   if (data.type === 'inverse' && data.id === inverseId) {
@@ -73,7 +74,7 @@ worker.onmessage = ({data}) => {
     resultRevision = worker.currentRevision;
     if(worker.showResult) setView('result');
     const labels = {none:'Tutte le frequenze',low:'Filtro passa-basso',high:'Filtro passa-alto',band:'Filtro passa-banda',custom:'Maschera personalizzata'};
-    status('Ricostruzione aggiornata',`${labels[preset]} · ${n} × ${n} px · elaborazione locale`);
+    status('Ricostruzione aggiornata',()=>t('{filter} · {size} × {size} px · elaborazione locale',{filter:labels[preset],size:n}));
     if(exportPending){if(resultRevision===revision){exportPending=false;download();}else inverse(true);}
   }
 };
@@ -81,7 +82,7 @@ worker.onerror = () => { status('Impossibile avviare il laboratorio','Ricarica l
 function resize() {
   for (const c of [source,result,spectrum,maskCanvas]) c.width=c.height=n;
   baseSpectrum=null; resetMask(); history=[]; $('undo').disabled=true;
-  $('dimensions').textContent=`${n} × ${n} px`;
+  setText($('dimensions'),()=>(`${n} × ${n} px`));
 }
 function drawOriginal() {
   srcCtx.fillStyle='#0c1422';srcCtx.fillRect(0,0,n,n);
@@ -91,16 +92,16 @@ function drawOriginal() {
   resCtx.drawImage(source,0,0);setView('original');
 }
 function loadImage(image,name) {
-  originalImage=image;originalName=name;resize();drawOriginal();$('filename').textContent=name;
+  originalImage=image;originalName=name;resize();drawOriginal();setText($('filename'),()=>(name));
   $('spectrum-hint').hidden=false;forward(false);
 }
 async function loadFile(file) {
   if(!file)return;
-  if(!file.type.startsWith('image/')){toast('Scegli un file immagine, per esempio JPG, PNG o WebP.');return;}
-  if(file.size>30*1024*1024){toast('L’immagine è troppo grande. Scegli un file sotto i 30 MB.');return;}
+  if(!file.type.startsWith('image/')){toast('Formato non valido. Sono supportati i formati immagine del browser, inclusi JPG, PNG e WebP.');return;}
+  if(file.size>30*1024*1024){toast('Dimensione massima del file: 30 MB.');return;}
   const load=++lastLoad,url=URL.createObjectURL(file),im=new Image();
   im.onload=()=>{URL.revokeObjectURL(url);if(load!==lastLoad)return;loadImage(im,file.name);$('examples').selectedIndex=-1;toast('Immagine caricata. Le proporzioni sono mantenute sulla tela quadrata.');};
-  im.onerror=()=>{URL.revokeObjectURL(url);toast('Questo formato non è leggibile. Prova con JPG, PNG o WebP.');};im.src=url;
+  im.onerror=()=>{URL.revokeObjectURL(url);toast('Formato immagine non leggibile.');};im.src=url;
 }
 function generatedExample(type) {
   const c=document.createElement('canvas');c.width=c.height=1024;const x=c.getContext('2d');
@@ -125,8 +126,8 @@ function chooseExample(type) {
   const load=++lastLoad;
   if(type==='architecture') {
     const im=new Image(); im.onload=()=>{if(load===lastLoad)loadImage(im,'architecture.jpg');};
-    im.onerror=()=>{if(load===lastLoad){loadImage(generatedExample('waves'),'onde-e-geometrie.png');toast('Foto non disponibile: caricato un esempio geometrico.');}};im.src='./assets/architecture.jpg';
-  } else loadImage(generatedExample(type),type==='grid'?'reticolo.png':type==='didactic'?'gradino-e-impulso.png':'onde-e-geometrie.png');
+    im.onerror=()=>{if(load===lastLoad){loadImage(generatedExample('waves'),'waves-and-shapes.png');toast('Foto non disponibile: caricato un esempio geometrico.');}};im.src='./assets/architecture.jpg';
+  } else loadImage(generatedExample(type),type==='grid'?'grid.png':type==='didactic'?'step-and-impulse.png':'waves-and-shapes.png');
 }
 function applyPreset(type,record=true) {
   if(!originalImage)return;
@@ -141,7 +142,7 @@ function applyPreset(type,record=true) {
   }maskCtx.putImageData(d,0,0);maskChanged(true);
 }
 function selectTool(next) {
-  tool=next;const labels={brush:'Pennello',circle:'Cerchio',line:'Linea',rectangle:'Rettangolo'};$('tool-name').textContent=labels[tool];
+  tool=next;const labels={brush:'Pennello',circle:'Cerchio',line:'Linea',rectangle:'Rettangolo'};setText($('tool-name'),()=>(labels[tool]));
   document.querySelectorAll('[data-tool]').forEach(b=>{b.classList.toggle('selected',b.dataset.tool===tool);b.setAttribute('aria-pressed',b.dataset.tool===tool);});$('arc-options').hidden=tool!=='circle';
 }
 function changeTarget() {
@@ -209,14 +210,14 @@ $('fill').onclick=()=>{if(!originalImage)return;snapshot();maskCtx.fillStyle='#0
 document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>selectTool(b.dataset.tool));
 document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>applyPreset(b.dataset.preset));
 for(const id of ['size','arc-start','arc-end'])$(id).oninput=()=>{$(id+'-value').textContent=$(id).value+(id==='size'?' px':'°');};
-$('color').oninput=()=>{$('color-value').textContent=$('color').value.toUpperCase();};
+$('color').oninput=()=>{setText($('color-value'),()=>($('color').value.toUpperCase()));};
 $('cutoff').addEventListener('pointerdown',()=>{if(originalImage)snapshot();});
 $('cutoff').addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key)&&originalImage)snapshot();});
-$('cutoff').oninput=()=>{$('cutoff-value').textContent=$('cutoff').value+'%';applyPreset(preset,false);};
+$('cutoff').oninput=()=>{setText($('cutoff-value'),()=>($('cutoff').value+'%'));applyPreset(preset,false);};
 $('auto').onchange=()=>{if($('auto').checked&&resultRevision!==revision)inverse(view==='result');else if(!$('auto').checked)status('Anteprima automatica disattivata','Premi Ricostruisci immagine dopo le modifiche.');};
-$('resolution').onchange=()=>{if(!originalImage)return;n=Number($('resolution').value);resize();drawOriginal();forward(false);toast(`Risoluzione ${n} × ${n}. La maschera è stata azzerata.`);};
+$('resolution').onchange=()=>{if(!originalImage)return;n=Number($('resolution').value);resize();drawOriginal();forward(false);toast(()=>t('Risoluzione {size} × {size}. La maschera è stata azzerata.',{size:n}));};
 function download() {
-  result.toBlob(blob=>{if(!blob){toast('Esportazione non riuscita. Riprova.');return;}const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=originalName.replace(/\.[^.]+$/,'')+'-fourier.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('PNG esportato alla risoluzione di lavoro.');},'image/png');
+  result.toBlob(blob=>{if(!blob){toast('Esportazione non riuscita.');return;}const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=originalName.replace(/\.[^.]+$/,'')+'-fourier.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('PNG esportato alla risoluzione di lavoro.');},'image/png');
 }
 $('export').onclick=()=>{if(!originalImage)return;if(resultRevision!==revision){exportPending=true;inverse(true);}else download();};
 for(const b of document.querySelectorAll('[data-expand]')) b.onclick=async()=>{
@@ -238,3 +239,6 @@ dropStage.addEventListener('dragover',e=>{e.preventDefault();});
 dropStage.addEventListener('dragleave',()=>{if(--dragDepth<=0)dropStage.classList.remove('dragover');});
 dropStage.addEventListener('drop',e=>{e.preventDefault();dragDepth=0;dropStage.classList.remove('dragover');loadFile(e.dataTransfer.files[0]);});
 chooseExample('architecture');
+
+onLanguageChange(()=>{setView(view);selectTool(tool);});
+initI18n();
